@@ -24,7 +24,10 @@ triWords <- function(w1, w2) {
 
 # The prediction app
 getWords <- function(str){
-  tokens <- tokens_tolower(x = tokens(str))
+  tokens <- tokens(str, split_hyphens = TRUE, remove_separators = TRUE,
+                   remove_punct = TRUE,remove_symbols = TRUE, remove_numbers = TRUE) 
+  tokens <- tokens_remove(tokens, stopwords("en"))
+  tokens <- tokens_select(tokens, c("[^a-zA-Z]", "([a-zA-Z0-9])\\1\\1+"), selection = "remove", valuetype = "regex")
   tokens <- rev(rev(tokens[[1]])[1:2])
   words <- triWords(tokens[1], tokens[2])
   return(words)
