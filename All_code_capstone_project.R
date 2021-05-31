@@ -39,14 +39,16 @@ grep("biostats", en_twitter, value=TRUE)
 length(grep("A computer once beat me at chess, but it was no match for me at kickboxing", en_twitter, value=TRUE))
 
 # Sampling the data
-# The total data is subset by 30% to do cleaning and further analysis
-samples_blogs <- en_blogs[rbinom(length(en_blogs), 1, 0.4) ==1] 
-samples_news <- en_news[rbinom(length(en_blogs), 1, 0.4) ==1]
-samples_twitter <- en_twitter[rbinom(length(en_blogs), 1, 0.4) ==1]
+# The total data is subset by 10% to do cleaning and further analysis
+samples_blogs <- en_blogs[rbinom(length(en_blogs), 1, 0.1) ==1] 
+samples_news <- en_news[rbinom(length(en_blogs), 1, 0.1) ==1]
+samples_twitter <- en_twitter[rbinom(length(en_blogs), 1, 0.1) ==1]
+data <- c(samples_blogs, samples_news, samples_twitter)
+
 stri_stats_general(samples_blogs) # số dòng, số ký tự
 stri_stats_latex (samples_blogs) # số từ số ký tự
 stri_count_words(samples_blogs) # tính số từ trong mỗi dòng
-data <- c(samples_blogs, samples_news, samples_twitter)
+
 
 # Tokenize and cleaning the texts with quanteda package:
 #- Transfer all text to lowercase
@@ -56,20 +58,14 @@ data <- c(samples_blogs, samples_news, samples_twitter)
 #- Removing url
 #- Remove symbols
 #- Removing number
-#- Remove the most common words of the language (stop words)
-#- Remove all other characters that are not letters and all the words with 2 or more consecutive repeated characters
+#- Removing the whitespace 
 
 tokendata <- function(data) {
   data <- tokens(data)
   data <- tokens_tolower(data)
-  data <- tokens(data, split_hyphens = TRUE)
-  data <- tokens(data, remove_separators = TRUE)
-  data <- tokens(data, remove_punct = TRUE)
   data <- tokens(data, remove_url = TRUE)
-  data <- tokens(data, remove_symbols = TRUE)
-  data <- tokens(data, remove_numbers = TRUE)
-  data <- tokens_remove(data, stopwords("en"))
-  data <- tokens_select(data, c("[^a-zA-Z]", "([a-zA-Z0-9])\\1\\1+"), selection = "remove", valuetype = "regex")
+  data <- tokens_select(data, c("[[:space:]]"), selection = "remove", valuetype = "regex")
+  data <- tokens_select(data, "([a-zA-Z0-9])\\1\\1+", selection = "remove", valuetype = "regex")
   return(data)
 }
 
@@ -82,7 +78,7 @@ dt <- corpus(data)
 dt <- tokendata(data)
 ngram <- tokens_ngrams(dt, n=1)
 dfm <- dfm(ngram)
-dfm <- dfm_trim(dfm, min_termfreq = 10)
+dfm <- dfm_trim(dfm, min_termfreq = 2)
 dfmS <- colSums(dfm)
 unigram <- data.table(word1=names(dfmS), freq=dfmS)
 unigram <- arrange(unigram, -freq)
@@ -95,13 +91,9 @@ head(unigram)
 # 3 columns in the table.
 ngram2 <- tokens_ngrams(dt, n=2)
 dfm2 <- dfm(ngram2)
-dfm2 <- dfm_trim(dfm2, min_termfreq = 5)
+dfm2 <- dfm_trim(dfm2, min_termfreq = 2)
 dfm2S <- colSums(dfm2)
-bigram <- data.table(
-  word1 = sapply(strsplit(names(dfm2S), "_", fixed = TRUE), "[[", 1),
-  word2 = sapply(strsplit(names(dfm2S), "_", fixed = TRUE), "[[", 2),
-  freq = dfm2S
-)
+ha
 bigram <- arrange(bigram, -freq)
 setkey(bigram, word1, word2)
 head(bigram)
@@ -137,7 +129,7 @@ bigram[, Prob := ((freq - discount_value) / Cn1  + (discount_value / Cn1) * Cfw 
 # It is similar to calculate the probability of the third word in trigram 
 trigram <- tokens_ngrams(dt, n=3)
 dfm3 <- dfm(trigram)
-dfm3 <- dfm_trim(dfm3, min_termfreq = 5)
+dfm3 <- dfm_trim(dfm3, min_termfreq = 2)
 dfm3S <- colSums(dfm3)
 trigram <- data.table(
   word1 = sapply(strsplit(names(dfm3S), "_", fixed = TRUE), "[[", 1),
@@ -189,18 +181,18 @@ triWords <- function(w1, w2) {
 }
 
 # The prediction model
-
 getWords <- function(str){
-  tokens <- tokens(str, split_hyphens = TRUE, remove_separators = TRUE,
-                   remove_punct = TRUE,remove_symbols = TRUE, remove_numbers = TRUE) 
-  tokens <- tokens_remove(tokens, stopwords("en"))
-  tokens <- tokens_select(tokens, c("[^a-zA-Z]", "([a-zA-Z0-9])\\1\\1+"), selection = "remove", valuetype = "regex")
-  tokens <- rev(rev(tokens[[1]])[1:2])
-  words <- triWords(tokens[1], tokens[2])
-  str = paste(str, words, sep = " ")
-  return(str)
+  if(str=="") {return("NULL")} else {
+    str <- gsub("[^a-zA-Z]", " ", str)
+    tokens <- tokens(str, split_hyphens = TRUE, remove_separators = TRUE,
+                     remove_punct = TRUE,remove_symbols = TRUE, remove_numbers = TRUE) 
+    tokens <- tokens_select(tokens, "[[:space:]]", selection = "remove", valuetype = "regex")
+    tokens <- tokens_select(tokens, "([a-zA-Z0-9])\\1\\1+", selection = "remove", valuetype = "regex")
+    tokens <- rev(rev(tokens[[1]])[1:2])
+    words <- triWords(tokens[1], tokens[2])
+    return(words)
+  }
 }
-
 
 # Visualizing with word cloud
 set.seed(1234)
@@ -219,8 +211,21 @@ plot_unigram <- ggplot(unigram[1:20,], aes(x=reorder(word1,freq), y=freq)) + geo
 plot_bigram <- ggplot(bigram[1:20,], aes(x= paste(word1, word2)), freq) + geom_bar(stat="Identity", fill="darkblue")
 plot_trigram <- ggplot(bigram[1:20,], aes(x=paste(word1, word2, word3), freq)) + geom_bar(stat="Identity", fill="darkblue")
 
-# Write n-gram tables into the csv file
-write.table(unigram,file= "unigram.csv",sep= ",",row.names=F)
-write.table(bigram,file= "bigram.csv",sep= ",",row.names=F)
-write.table(trigram,file= "trigram.csv",sep= ",",row.names=F)
+# Drop some columns to reduce the size 
+bigram$Cn1 <- NULL
+bigram$Cfw <- NULL
+bigram$Pcont <- NULL
+bigram$freq <- NULL
+
+trigram$freq <- NULL
+trigram$Cn2 <- NULL
+trigram$Pcont <- NULL
+trigram$Cfw <- NULL
+
+
+# Write n-gram tables into the txt file
+write.table(unigram,file= "unigram.txt",sep= ",",row.names=F)
+write.table(bigram,file= "bigram.txt",sep= ",",row.names=F)
+write.table(trigram,file= "trigram.txt",sep= ",",row.names=F)
+
 
